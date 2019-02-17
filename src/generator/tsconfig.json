@@ -1,9 +1,0 @@
-{
-  "compilerOptions": {
-    "strict": true,
-    "module": "commonjs",
-    "outDir": "../../dist/generator",
-    "target": "es2018",
-    "sourceMap": true
-  }
-}
