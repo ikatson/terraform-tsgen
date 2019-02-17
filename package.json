@@ -1,5 +1,5 @@
 {
-    "name": "terraform-typescript-types",
+    "name": "terraform-tsgen",
     "version": "0.0.1",
     "devDependencies": {
         "@types/node": "^11.9.4"

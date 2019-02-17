@@ -1,4 +1,5 @@
 import fs = require("fs");
+import path = require("path");
 import * as program from "commander";
 
 import {Schema, Type, SchemaInfo, TypeDescription} from "./inputschema";
@@ -14,6 +15,16 @@ enum SchemaInfoType {
   Resource,
   Data,
   Other
+}
+
+class GenerateResult {
+  filename: string
+  chunks: IterableIterator<string>
+
+  constructor(filename: string, chunks: IterableIterator<string>) {
+    this.filename = filename
+    this.chunks = chunks
+  }
 }
 
 class Generator {
@@ -79,7 +90,7 @@ class Generator {
     }
   }
 
-  renderSchemaInfo(targetClassName: string, si: SchemaInfo, type: SchemaInfoType): string {
+  renderSchemaInfo(targetClassName: string, si: SchemaInfo, type: SchemaInfoType, targetResourceName?: string): string {
     /*
     interface aws_autoscaling_group_config {
         max_size: rnumber,
@@ -107,6 +118,8 @@ class Generator {
       console.warn(`no object at ${targetClassName}. Returning "any"`)
       return 'any';
     }
+
+    targetResourceName = targetResourceName || targetClassName;
 
     let configClsName = `${targetClassName}_config`
 
@@ -176,14 +189,14 @@ class Generator {
     switch (type) {
       case SchemaInfoType.Data:
         cls.push(`    private _is_data: boolean = true`);
-        cls.push(`    private _name: string = "${targetClassName}"`)
+        cls.push(`    private _name: string = "${targetResourceName}"`)
         cls.push('    private _id: string;')
         cls.push(namedConstructor)
         cls.push(dataAndResourceImpls)
         break;
       case SchemaInfoType.Resource:
         cls.push(`    private _is_data: boolean = false`);
-        cls.push(`    private _name: string = "${targetClassName}"`)
+        cls.push(`    private _name: string = "${targetResourceName}"`)
         cls.push('    private _id: string;')
         cls.push(namedConstructor)
         cls.push(dataAndResourceImpls)
@@ -255,29 +268,52 @@ class Generator {
     this.definitions = [];
   }
 
-  *generate(): IterableIterator<string> {
-    yield 'import {rstring, rboolean, rnumber, Reference, Data, Resource, HasID, Provider} from "./core"'
+  *generate(): IterableIterator<GenerateResult> {
+    const header = 'import {rstring, rboolean, rnumber, Reference, Data, Resource, HasID, Provider} from "../../client/core"';
 
-    this.renderSchemaInfo(`${this.schema.name}_provider`, this.schema.provider, SchemaInfoType.Provider)
-    for (const d of this.definitions) {
-      yield d
-    }
-    this.clear()
-
+    // Generate provider file.
+    yield new GenerateResult(
+      `${this.schema.name}_provider`,
+      (function*(g: Generator) {
+        yield header
+        g.renderSchemaInfo(`${g.schema.name}_provider`, g.schema.provider, SchemaInfoType.Provider)
+        for (const d of g.definitions) {
+          yield d
+        }
+        g.clear()
+      })(this)
+    )
+    
+    // Generate resource files.
     for (const [k, v] of Object.entries(this.schema.resources)) {
-      this.renderSchemaInfo(`${k}`, v, SchemaInfoType.Resource)
-      for (const d of this.definitions) {
-        yield d
-      }
-      this.clear()
+      yield new GenerateResult(
+        k,
+        (function*(g: Generator) {
+          yield header
+          g.renderSchemaInfo(k, v, SchemaInfoType.Resource)
+          for (const d of g.definitions) {
+            yield d
+          }
+          g.clear()
+        })(this)
+      )
     }
-    for (const [k, v] of Object.entries(this.schema['data-sources'])) {
-      this.renderSchemaInfo(`data_${k}`, v, SchemaInfoType.Data)
-      for (const d of this.definitions) {
-        yield d
-      }
-      this.clear()
+
+    // Generate data files.
+    for (const [k, v] of Object.entries(this.schema["data-sources"])) {
+      yield new GenerateResult(
+        `data_${k}`,
+        (function*(g: Generator) {
+          yield header
+          g.renderSchemaInfo(`data_${k}`, v, SchemaInfoType.Data, k)
+          for (const d of g.definitions) {
+            yield d
+          }
+          g.clear()
+        })(this)
+      )
     }
+
   }
 }
 
@@ -285,13 +321,26 @@ function main() {
   program.version("0.0.1");
 
   program
-    .command("generate <input_schema>")
-    .action((input_schema: string, options: program.Command) => {
+    .command("generate <input_schema> <output_folder>")
+    .action((input_schema: string, output_folder: string, options: program.Command) => {
       parseInput(input_schema).then(async s => {
+        try {
+          fs.mkdirSync(output_folder)
+        } catch(e) {
+          if (e.code != 'EEXIST') {
+            throw e
+          }
+        }
+        
         const g = new Generator(s);
         for (const s of g.generate()) {
-          process.stdout.write(s)
-          process.stdout.write("\n\n")
+          const stream = fs.createWriteStream(path.join(output_folder, s.filename + ".ts"))
+          for (const chunk of s.chunks) {
+            stream.write(chunk)
+            stream.write("\n\n")
+          }
+          stream.end()
+          stream.close()
         }
       });
     });
