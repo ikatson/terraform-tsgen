@@ -1,3 +1,16 @@
+export class UntypedReference {
+    path: string;
+    constructor(path: string) {
+        this.path = path;
+    }
+    toString(): string {
+        return "${" + this.path + "}";
+    }
+    toJSON(): string {
+        return this.toString()
+    }
+}
+
 export class Reference<T> {
     path: string;
     constructor(path: string) {
@@ -62,6 +75,53 @@ export class Variable {
     }
 }
 
+export class UsedModule {
+    inputs: Map<string, anyType> = new Map()
+    outputs: Map<string, Output> = new Map()
+    
+    name: string
+    source: string
+
+    constructor(name: string, source: string) {
+        this.name = name
+        this.source = source
+    }
+
+    set(k: string, value: anyType): this {
+        this.inputs.set(k, value)
+        return this
+    }
+
+    outputRef(k: string): UntypedReference {
+        return new UntypedReference(`module.${this.name}.${k}`)
+    }
+
+    toJSON() {
+        const values: {[p: string]: any} = {
+            source: this.source,
+        }
+        for (const [k, v] of this.inputs) {
+            values[k] = v;
+        }
+        return {
+            [this.name]: [values]
+        }
+    }
+}
+
+export class GeneratedModule {
+    name: string
+    source: string
+
+    variables: Map<string, Variable> = new Map()
+    outputs: Map<string, Output> = new Map()
+
+    constructor(name: string, source: string) {
+        this.name = name
+        this.source = source
+    }
+}
+
 export interface HasID {
     getID(): string
 }
@@ -71,7 +131,22 @@ export interface HasName {
 export interface Data extends HasID, HasName {}
 export interface Resource extends HasID, HasName {}
 export interface Provider {}
-export class Output {}
+
+export class Output {
+    name: string
+    value: primitiveTypes
+    
+    constructor(name: string, value: primitiveTypes) {
+        this.name = name;
+        this.value = value;
+    }
+
+    toJSON() {
+        return {
+            [this.name]: [{value: this.value}]
+        }
+    }
+}
 
 
 export class TfModule {
@@ -106,16 +181,30 @@ export class TfModule {
         return d
     }
 
+    asModule(name: string, path: string): GeneratedModule {
+        const module = new GeneratedModule(name, path);
+        for (const v of this._variables) {
+            module.variables.set(v.name, v)
+        }
+        for (const v of this._outputs) {
+            module.outputs.set(v.name, v)
+        }
+        return module
+    }
+
     toJSON() {
         return {
             variable: this._variables,
             provider: this._providers,
             data: this._data,
-            resource: this._resources
+            resource: this._resources,
+            output: this._outputs,
         }
     }
 }
 
-export type rnumber = number | Reference<number> | Expression
-export type rstring = string | Reference<string> | Expression
-export type rboolean = boolean | Reference<boolean> | Expression
+export type rnumber = number | Reference<number> | UntypedReference | Expression
+export type rstring = string | Reference<string> | UntypedReference | Expression
+export type rboolean = boolean | Reference<boolean> | UntypedReference | Expression
+export type primitiveTypes = rnumber | rstring | rboolean
+export type anyType = primitiveTypes | {[p: string]: primitiveTypes} | Array<primitiveTypes>
