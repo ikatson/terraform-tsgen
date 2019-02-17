@@ -1,0 +1,10 @@
+{
+    "name": "terraform-typescript-types",
+    "version": "0.0.1",
+    "devDependencies": {
+        "@types/node": "^11.9.4"
+    },
+    "dependencies": {
+        "commander": "^2.19.0"
+    }
+}
