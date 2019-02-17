@@ -2,6 +2,8 @@ import fs = require("fs");
 import path = require("path");
 import * as program from "commander";
 
+import {mkdirRecursiveSync} from "../utils/mkdir-recursive"
+
 import {Schema, Type, SchemaInfo, TypeDescription} from "./inputschema";
 
 async function parseInput(filename: string): Promise<Schema> {
@@ -324,13 +326,7 @@ function main() {
     .command("generate <input_schema> <output_folder>")
     .action((input_schema: string, output_folder: string, options: program.Command) => {
       parseInput(input_schema).then(async s => {
-        try {
-          fs.mkdirSync(output_folder)
-        } catch(e) {
-          if (e.code != 'EEXIST') {
-            throw e
-          }
-        }
+        mkdirRecursiveSync(output_folder)
         
         const g = new Generator(s);
         for (const s of g.generate()) {
